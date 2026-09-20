@@ -10,6 +10,7 @@ WAVIFY - Полнофункциональный сервер:
 
 import sys
 import os
+import errno
 import json
 import re
 import html as html_lib
@@ -817,7 +818,7 @@ def start_server_background(port=PORT):
             print(f"=================================================")
             return httpd, p
         except OSError as e:
-            if e.errno == 98:
+            if e.errno in (getattr(errno, 'EADDRINUSE', 98), getattr(errno, 'WSAEADDRINUSE', 10048), 98, 10048):
                 continue
             raise
     raise RuntimeError("Не удалось найти свободный порт для сервера Wavify")
@@ -835,7 +836,7 @@ def run():
         print(f"=================================================")
         httpd.serve_forever()
     except OSError as e:
-        if e.errno == 98:
+        if e.errno in (getattr(errno, 'EADDRINUSE', 98), getattr(errno, 'WSAEADDRINUSE', 10048), 98, 10048):
             alt_port = PORT + 1
             print(f"Порт {PORT} занят, пробуем {alt_port}...")
             httpd = ThreadingHTTPServer(('', alt_port), WavifyHandler)

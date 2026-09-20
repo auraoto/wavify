@@ -22,6 +22,16 @@ def is_server_running(url, timeout=0.8):
     except Exception:
         return False
 
+def get_storage_path():
+    """Возвращает кроссплатформенный путь для сохранения настроек и плейлистов"""
+    if sys.platform == 'win32':
+        base = os.environ.get('APPDATA') or os.path.expanduser('~')
+        return os.path.join(base, 'Wavify')
+    elif sys.platform == 'darwin':
+        return os.path.expanduser('~/Library/Application Support/Wavify')
+    else:
+        return os.path.expanduser('~/.local/share/wavify')
+
 def launch():
     # 1. Проверяем, запущен ли уже локальный сервер Wavify на порту 3000
     target_port = 3000
@@ -34,8 +44,8 @@ def launch():
         # Запускаем встроенный локальный сервер в фоновом потоке
         httpd, actual_port = server.start_server_background(target_port)
 
-    # 2. Настраиваем директорию постоянного хранилища (localStorage, cookies)
-    storage_dir = os.path.expanduser("~/.local/share/wavify")
+    # 2. Настраиваем кроссплатформенную директорию постоянного хранилища
+    storage_dir = get_storage_path()
     os.makedirs(storage_dir, exist_ok=True)
 
     icon_path = os.path.join(BASE_DIR, "assets", "deezer.png")
