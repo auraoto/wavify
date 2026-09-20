@@ -6,14 +6,12 @@
 
 ### Способ 1: Десктопное приложение через pywebview (Рекомендуется)
 ```bash
-cd /home/whywithme/.gemini/antigravity/scratch/wavify
 python3 main.py
 ```
 Запустит нативное окно программы с аппаратным ускорением, сохранением плейлистов и настроек.
 
 ### Способ 2: В веб-браузере
 ```bash
-cd /home/whywithme/.gemini/antigravity/scratch/wavify
 python3 server.py 3000
 ```
 После запуска перейдите в браузере по адресу: **http://localhost:3000**
