@@ -55,7 +55,7 @@ const server = http.createServer(async (req, res) => {
               source: 'spotify',
               duration: item.duration || 180,
               cover: item.album?.cover_medium || item.artist?.picture_medium || '',
-              audioUrl: item.preview || ''
+              audioUrl: `/api/stream?artist=${encodeURIComponent(item.artist?.name || '')}&title=${encodeURIComponent(item.title)}`
             });
           });
         }
@@ -118,7 +118,7 @@ const server = http.createServer(async (req, res) => {
               source: source,
               duration: item.duration || 180,
               cover: item.album?.cover_medium || item.artist?.picture_medium || '',
-              audioUrl: item.preview || ''
+              audioUrl: `/api/stream?artist=${encodeURIComponent(item.artist?.name || '')}&title=${encodeURIComponent(item.title)}`
             });
           });
         }

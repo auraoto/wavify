@@ -26,6 +26,8 @@ const I18N = {
     addedToPlaylist: 'Трек добавлен в плейлист!',
     playlistCreated: 'Плейлист создан!',
     audioUnavailable: 'Аудио недоступно для этого трека',
+    loadingFullTrack: 'Загружаем полную версию трека…',
+    previewOnlyNotice: 'Полная версия не найдена — играем превью (30 сек). Попробуйте следующий трек.',
     deletePlaylist: 'Удалить плейлист',
     yearOfRelease: 'Год выпуска',
     tracksCount: 'треков',
@@ -65,6 +67,8 @@ const I18N = {
     addedToPlaylist: 'Track added to playlist!',
     playlistCreated: 'Playlist created!',
     audioUnavailable: 'Audio unavailable for this track',
+    loadingFullTrack: 'Loading the full track…',
+    previewOnlyNotice: 'Full version not found — playing 30s preview. Try the next track.',
     deletePlaylist: 'Delete playlist',
     yearOfRelease: 'Release year',
     tracksCount: 'tracks',
@@ -703,7 +707,12 @@ async function renderAlbumView(album) {
     const res = await fetch(`/api/album-tracks?${params.toString()}`);
     if (!res.ok) throw new Error('Failed to fetch album tracks');
     const data = await res.json();
-    const tracks = data.tracks || [];
+    let tracks = data.tracks || [];
+
+    // Гарантируем порядок треков по номеру (на случай старых данных/кэша)
+    if (tracks.some(tr => tr.trackNumber)) {
+      tracks = [...tracks].sort((a, b) => (a.trackNumber || 999) - (b.trackNumber || 999));
+    }
 
     dom.loadingIndicator.style.display = 'none';
 
@@ -1127,6 +1136,7 @@ function playTrack(track, list = null) {
 
   state.currentTrack = track;
   state.isFullAudioStreaming = true;
+  state.isPlayingPreview = false;
 
   dom.playerTrackTitle.textContent = track.title;
   dom.playerTrackAuthor.textContent = track.artist;
@@ -1145,18 +1155,31 @@ function playTrack(track, list = null) {
   const finalAudioSource = track.directStreamUrl || streamEndpoint;
 
   dom.audioElement.src = finalAudioSource;
+  // Пока стрим полного трека резолвится на сервере (yt-dlp), показываем статус вместо тишины
+  const fullStreamLoadingTimer = setTimeout(() => {
+    if (!dom.audioElement.paused || dom.audioElement.readyState === 0) {
+      dom.playerTrackAuthor.textContent = t('loadingFullTrack');
+    }
+  }, 1200);
+
+  dom.audioElement.addEventListener('playing', () => clearTimeout(fullStreamLoadingTimer), { once: true });
+  dom.audioElement.addEventListener('error', () => clearTimeout(fullStreamLoadingTimer), { once: true });
+
   dom.audioElement.play().then(() => {
     state.isPlaying = true;
     updatePlayPauseButtons(true);
     highlightActivePlayingRow();
   }).catch((err) => {
+    clearTimeout(fullStreamLoadingTimer);
     console.warn('Playback error, trying preview fallback if available:', err);
-    if (track.audioUrl && track.audioUrl !== finalAudioSource) {
+    if (track.audioUrl && track.audioUrl !== finalAudioSource && track.audioUrl.startsWith('http')) {
       dom.audioElement.src = track.audioUrl;
+      state.isPlayingPreview = true;
       dom.audioElement.play().then(() => {
         state.isPlaying = true;
         updatePlayPauseButtons(true);
         highlightActivePlayingRow();
+        showToast(t('previewOnlyNotice'));
       }).catch(console.error);
     }
   });
@@ -1176,12 +1199,22 @@ function playTrack(track, list = null) {
 
 async function fetchFullAudioUrl(track) {
   try {
-    const qUrl = `/api/full-audio-info?artist=${encodeURIComponent(track.artist)}&title=${encodeURIComponent(track.title)}`;
+    const scParam = track.scUrl ? `&sc_url=${encodeURIComponent(track.scUrl)}` : '';
+    const qUrl = `/api/full-audio-info?artist=${encodeURIComponent(track.artist)}&title=${encodeURIComponent(track.title)}${scParam}`;
     const resp = await fetch(qUrl);
     if (resp.ok) {
       const data = await resp.json();
       if (data.fullAudioUrl) {
         track.directStreamUrl = data.fullAudioUrl;
+        // Если сейчас играет 30-секундное превью — бесшовно переключаемся на полный трек
+        if (state.isPlayingPreview && state.currentTrack && state.currentTrack.id === track.id) {
+          const resumeAt = dom.audioElement.currentTime;
+          const wasPlaying = !dom.audioElement.paused;
+          dom.audioElement.src = data.fullAudioUrl;
+          dom.audioElement.currentTime = resumeAt;
+          state.isPlayingPreview = false;
+          if (wasPlaying) dom.audioElement.play().catch(console.warn);
+        }
       }
     }
   } catch (e) {}
@@ -1259,6 +1292,13 @@ function highlightActivePlayingRow() {
 }
 
 // Прогресс-бар и время полного трека
+dom.audioElement.addEventListener('loadedmetadata', () => {
+  // Убираем статус загрузки, если он успел появиться
+  if (state.currentTrack && dom.playerTrackAuthor.textContent === t('loadingFullTrack')) {
+    dom.playerTrackAuthor.textContent = state.currentTrack.artist;
+  }
+});
+
 dom.audioElement.addEventListener('timeupdate', () => {
   const cur = dom.audioElement.currentTime;
   const dur = dom.audioElement.duration || state.currentTrack?.duration || 180;

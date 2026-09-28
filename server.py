@@ -372,7 +372,8 @@ class WavifyHandler(SimpleHTTPRequestHandler):
                     "source": assign_source,
                     "duration": item.get('duration', 180),
                     "cover": item.get('album', {}).get('cover_medium') or item.get('artist', {}).get('picture_medium') or '',
-                    "audioUrl": item.get('preview', '')
+                    # Полноценный стрим через /api/stream вместо 30-секундного превью Deezer
+                    "audioUrl": ""
                 })
         return tracks
 
@@ -425,7 +426,8 @@ class WavifyHandler(SimpleHTTPRequestHandler):
                     "source": assign_source,
                     "duration": round((item.get('trackTimeMillis') or 180000) / 1000),
                     "cover": (item.get('artworkUrl100') or '').replace('100x100bb', '400x400bb'),
-                    "audioUrl": item.get('previewUrl', '')
+                    # Полный трек через /api/stream вместо 30-секундного превью iTunes
+                    "audioUrl": ""
                 })
     def handle_api_album_tracks(self, parsed):
         query_params = urllib.parse.parse_qs(parsed.query)
@@ -529,7 +531,8 @@ class WavifyHandler(SimpleHTTPRequestHandler):
                             "duration": item.get('duration', 180),
                             "cover": alb_cover,
                             "streamUrl": f"/api/stream?artist={enc_art}&title={enc_tit}",
-                            "audioUrl": item.get('preview') or f"/api/stream?artist={enc_art}&title={enc_tit}"
+                            # Всегда полный трек через /api/stream, а не 30-секундное превью
+                            "audioUrl": f"/api/stream?artist={enc_art}&title={enc_tit}"
                         })
             except Exception as e:
                 print(f"[AlbumTracks] Deezer error: {e}", file=sys.stderr)
@@ -567,10 +570,26 @@ class WavifyHandler(SimpleHTTPRequestHandler):
                             "duration": round((it.get('trackTimeMillis', 180000)) / 1000),
                             "cover": cover_it,
                             "streamUrl": f"/api/stream?artist={enc_art}&title={enc_tit}",
-                            "audioUrl": it.get('previewUrl') or f"/api/stream?artist={enc_art}&title={enc_tit}"
+                            # Всегда полный трек через /api/stream, а не 30-секундное превью
+                            "audioUrl": f"/api/stream?artist={enc_art}&title={enc_tit}"
                         })
             except Exception as e:
                 print(f"[AlbumTracks] iTunes error: {e}", file=sys.stderr)
+
+        # Жёсткая сортировка треклиста по номеру диска и номеру трека
+        def _disc_no(tr):
+            tid = str(tr.get('id', ''))
+            if '-2-' in tid:
+                try:
+                    return int(tid.split('-')[2])
+                except (ValueError, IndexError):
+                    pass
+            return 1
+
+        tracks.sort(key=lambda tr: (_disc_no(tr), tr.get('trackNumber') or 999, tr.get('title', '').lower()))
+        # Перенумеровываем номера сквозняком (учитывая несколько дисков)
+        for i, tr in enumerate(tracks, 1):
+            tr['trackNumber'] = i
 
         # Фоновое кэширование первых 4 треков альбома для моментального запуска
         for tr in tracks[:4]:
